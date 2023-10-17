@@ -3,11 +3,12 @@
 # Quentin Dufournet, 2023
 # --------------------------------------------------
 # Built-in
-from flask import Flask, redirect, url_for, request
 import datetime
+import os
 
 # 3rd party
-
+from flask import Flask, redirect, url_for, request
+from cryptography.fernet import Fernet
 # --------------------------------------------------
 
 app = Flask(__name__)
@@ -41,10 +42,38 @@ def store_message(user, message):
     :param user: user who sent the message
     :param message: message to store
     """
-
+    
+    message = decrypt_message(message)
     date = datetime.datetime.now().strftime('%d-%m-%Y %H:%M:%S')
     with open('messages', 'a') as f:
         f.write(f'{date} - {user} : {message}\n')
+
+
+def encrypt_message(message):
+    """ Encrypt a message
+
+    :param message: message to encrypt
+    :return: encrypted message
+    """
+
+    key = os.environ['SL8CK_KEY'].encode()
+    f = Fernet(key)
+
+    return f.encrypt(message.encode()).decode()
+
+
+def decrypt_message(message):
+    """ Decrypt a message
+
+    :param message: message to decrypt
+    :param key: key to use for decryption
+    :return: decrypted message
+    """
+
+    key = os.environ['SL8CK_KEY'].encode()
+    f = Fernet(key)
+
+    return f.decrypt(message.encode()).decode()
 
 
 def retrieve_messages(size):
@@ -56,7 +85,7 @@ def retrieve_messages(size):
 
     with open('messages', 'r') as f:
         messages = f.readlines()[-int(size):]
-    
+
     messages_as_dict = []
     for message in messages:
         message = {
@@ -67,7 +96,7 @@ def retrieve_messages(size):
         if "'" in message['message']:
             message['message'] = message['message'].replace("'", '`')
         messages_as_dict.append(message)
-    
+
     return messages_as_dict
 
 
@@ -85,7 +114,7 @@ def message():
         return redirect(url_for('success', text=message))
     elif request.method == 'GET':
         size = request.args.get('size')
-        return redirect(url_for('success', text=retrieve_messages(size)))
+        return redirect(url_for('success', text=encrypt_message(str(retrieve_messages(size)))))
     else:
         return redirect(url_for('error', text='Method not allowed'))
 
@@ -99,7 +128,7 @@ def login():
 
     if request.method == 'POST':
         user = request.form['user']
-        store_message(user, 'logged in')
+        store_message(user, encrypt_message('Logged in'))
         return redirect(url_for('success', text=user))
     else:
         return redirect(url_for('error', text='Method not allowed'))

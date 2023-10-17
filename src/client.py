@@ -8,10 +8,12 @@ import threading
 import time
 import json
 import argparse
+import os
 
 # 3rd party
 import requests
 from rich import print as rprint
+from cryptography.fernet import Fernet
 
 # --------------------------------------------------
 
@@ -50,7 +52,8 @@ class MySl8ck():
 
         :param message: Message to send
         """
-
+        
+        message = encrypt_message(message)
         response = requests.post(
             f'{self.url}/message', data={'user': self.user, 'message': message})
         if response.status_code != 200:
@@ -78,6 +81,32 @@ class MySl8ck():
         if response.status_code != 200:
             sys.exit('Error while retrieving messages')
         return response.json()
+
+
+def encrypt_message(message):
+    """ Encrypt a message
+
+    :param message: Message to encrypt
+    :return: Encrypted message
+    """
+
+    key = os.environ['SL8CK_KEY'].encode()
+    f = Fernet(key)
+
+    return f.encrypt(message.encode()).decode(), key.decode()
+
+
+def decrypt_message(message):
+    """ Decrypt a message
+
+    :param message: Message to decrypt
+    :return: Decrypted message
+    """
+
+    key = os.environ['SL8CK_KEY'].encode()
+    f = Fernet(key)
+
+    return f.decrypt(message.encode()).decode()
 
 
 def parse_args():
@@ -114,16 +143,18 @@ def main_thread(sl):
     """
 
     previous_messages = sl.get_messages()['success']
+    previous_messages = decrypt_message(previous_messages)
     previous_messages = list(message_as_str_to_dict(previous_messages))
     for message in previous_messages:
         sl.print_message(message)
 
     while True:
         new_messages = sl.get_messages()['success']
+        new_messages = decrypt_message(new_messages)
         new_messages = list(message_as_str_to_dict(new_messages))
         sl.diff_messages(previous_messages, new_messages)
         previous_messages = new_messages
-        time.sleep(1)
+        time.sleep(5)
 
 
 if __name__ == '__main__':
@@ -132,6 +163,7 @@ if __name__ == '__main__':
     sl = MySl8ck(args.url)
 
     messages = sl.get_messages()['success']
+    messages = decrypt_message(messages)
     messages = list(message_as_str_to_dict(messages))
 
     main = threading.Thread(target=main_thread, args=(sl,))
