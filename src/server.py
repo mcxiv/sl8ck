@@ -5,6 +5,7 @@
 # Built-in
 import datetime
 import os
+import sys
 
 # 3rd party
 from flask import Flask, redirect, url_for, request
@@ -42,7 +43,7 @@ def store_message(user, message):
     :param user: user who sent the message
     :param message: message to store
     """
-    
+
     message = decrypt_message(message)
     date = datetime.datetime.now().strftime('%d-%m-%Y %H:%M:%S')
     with open('messages', 'a') as f:
@@ -135,4 +136,9 @@ def login():
 
 
 if __name__ == '__main__':
+    try:
+        os.environ['SL8CK_KEY']
+    except KeyError:
+        sys.exit('Please set the SL8CK_KEY environment variable')
+
     app.run(debug=True)

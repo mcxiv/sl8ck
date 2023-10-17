@@ -52,7 +52,7 @@ class MySl8ck():
 
         :param message: Message to send
         """
-        
+
         message = encrypt_message(message)
         response = requests.post(
             f'{self.url}/message', data={'user': self.user, 'message': message})
@@ -159,6 +159,11 @@ def main_thread(sl):
 
 if __name__ == '__main__':
     args = parse_args()
+
+    try:
+        os.environ['SL8CK_KEY']
+    except KeyError:
+        sys.exit('Please set the SL8CK_KEY environment variable')
 
     sl = MySl8ck(args.url)
 
