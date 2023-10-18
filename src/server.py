@@ -129,7 +129,7 @@ def login():
 
     if request.method == 'POST':
         user = request.form['user']
-        store_message(user, encrypt_message('Logged in'))
+        store_message(user, encrypt_message('joined the chat'))
         return redirect(url_for('success', text=user))
     else:
         return redirect(url_for('error', text='Method not allowed'))
