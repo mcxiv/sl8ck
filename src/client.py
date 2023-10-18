@@ -89,7 +89,7 @@ class MySl8ck():
 
     def refresh_screen(self):
         """ Refresh the screen and print the last messages """
-        
+
         os.system('clear')
         refresh_messages = self.get_messages()['success']
         refresh_messages = decrypt_message(refresh_messages)
@@ -132,6 +132,8 @@ def parse_args():
 
     parser.add_argument('-u', '--url', type=str, default='http://localhost:5000',
                         help='URL of the server')
+    parser.add_argument('-k', '--key', type=str, default=None,
+                        help='Key to encrypt/decrypt messages')
 
     return parser.parse_args()
 
@@ -179,7 +181,7 @@ def main_thread(sl):
 
 def internal_commands(sl, command):
     """ Internal commands 
-    
+
     :param sl: MySl8ck object
     :param command: Command to execute
     """
@@ -229,7 +231,8 @@ def print_welcome():
 
 if __name__ == '__main__':
     args = parse_args()
-
+    if args.key:
+        os.environ['SL8CK_KEY'] = args.key
     try:
         os.environ['SL8CK_KEY']
     except KeyError:
