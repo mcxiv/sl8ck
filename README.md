@@ -34,5 +34,5 @@ python3 src/server.py # By default, url is http://localhost:5000
 python3 src/client.py --url <url> # By default, url is http://localhost:5000
 ```
 
-## Example
-![Example](docs/example.png)
+## Demo
+![Demo](docs/demo.gif)
