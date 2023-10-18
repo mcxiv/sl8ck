@@ -21,6 +21,10 @@ from cryptography.fernet import Fernet
 class MySl8ck():
     def __init__(self, url):
         self.url = url
+        self.kill_thread = False
+        self.previous_messages = None
+        self.new_messages = None
+
         if self.login() != 200:
             sys.exit('Login failed')
 
@@ -58,6 +62,7 @@ class MySl8ck():
             f'{self.url}/message', data={'user': self.user, 'message': message})
         if response.status_code != 200:
             sys.exit('Error while sending message')
+        self.refresh_screen()
 
     def diff_messages(self, previous, new):
         """ Print the difference between two lists of messages
@@ -81,6 +86,17 @@ class MySl8ck():
         if response.status_code != 200:
             sys.exit('Error while retrieving messages')
         return response.json()
+
+    def refresh_screen(self):
+        """ Refresh the screen and print the last messages """
+        
+        os.system('clear')
+        refresh_messages = self.get_messages()['success']
+        refresh_messages = decrypt_message(refresh_messages)
+        refresh_messages = list(message_as_str_to_dict(refresh_messages))
+        for message in refresh_messages:
+            self.print_message(message)
+        self.previous_messages = refresh_messages
 
 
 def encrypt_message(message):
@@ -142,19 +158,73 @@ def main_thread(sl):
     :param sl: MySl8ck object
     """
 
-    previous_messages = sl.get_messages()['success']
-    previous_messages = decrypt_message(previous_messages)
-    previous_messages = list(message_as_str_to_dict(previous_messages))
-    for message in previous_messages:
+    sl.previous_messages = sl.get_messages()['success']
+    sl.previous_messages = decrypt_message(sl.previous_messages)
+    sl.previous_messages = list(message_as_str_to_dict(sl.previous_messages))
+    for message in sl.previous_messages:
         sl.print_message(message)
 
-    while True:
-        new_messages = sl.get_messages()['success']
-        new_messages = decrypt_message(new_messages)
-        new_messages = list(message_as_str_to_dict(new_messages))
-        sl.diff_messages(previous_messages, new_messages)
-        previous_messages = new_messages
-        time.sleep(5)
+    started = time.time()
+    while not sl.kill_thread:
+        if time.time() - started >= 5:
+            sl.new_messages = sl.get_messages()['success']
+            sl.new_messages = decrypt_message(sl.new_messages)
+            sl.new_messages = list(message_as_str_to_dict(sl.new_messages))
+            sl.diff_messages(sl.previous_messages, sl.new_messages)
+            sl.previous_messages = sl.new_messages
+            started = time.time()
+        else:
+            time.sleep(0.1)
+
+
+def internal_commands(sl, command):
+    """ Internal commands 
+    
+    :param sl: MySl8ck object
+    :param command: Command to execute
+    """
+
+    if command == ':help':
+        rprint()
+        rprint('[#36C5F0]' +
+               '==============================\n' +
+               '|[#E01E5A]       Commands list:       [/#E01E5A]|\n' +
+               '==============================\n'
+               '| :help - Show this help     |\n' +
+               '| :exit - Exit the chat      |\n' +
+               '| :clear - Clear the screen  |\n' +
+               '| :cr - Clear and Refresh    |\n' +
+               '=============================='
+               '[/#36C5F0]'
+               )
+        rprint()
+    elif command == ':exit':
+        sl.send_message('left the chat')
+        sl.kill_thread = True
+        sys.exit()
+    elif command == ':clear':
+        os.system('clear')
+    elif command == ':cr':
+        sl.refresh_screen()
+
+
+def print_welcome():
+    """ Print the welcome message and the commands list """
+
+    rprint('[#E01E5A]' +
+           '==============================\n' +
+           '|[#36C5F0]        Welcome on...       [/#36C5F0]|\n' +
+           '==============================\n' +
+           '|  ____  _  ___       _      |\n' +
+           '| / ___|| |( _ )  ___| | __  |\n' +
+           '| \___ \| |/ _ \ / __| |/ /  |\n' +
+           '|  ___) | | (_) | (__|   <   |\n' +
+           '| |____/|_|\___/ \___|_|\_\\  |\n' +
+           '|                            |\n' +
+           '==============================' +
+           '[/#E01E5A]'
+           )
+    internal_commands(None, ':help')
 
 
 if __name__ == '__main__':
@@ -165,6 +235,8 @@ if __name__ == '__main__':
     except KeyError:
         sys.exit('Please set the SL8CK_KEY environment variable')
 
+    print_welcome()
+
     sl = MySl8ck(args.url)
 
     messages = sl.get_messages()['success']
@@ -174,7 +246,16 @@ if __name__ == '__main__':
     main = threading.Thread(target=main_thread, args=(sl,))
     main.start()
 
+    commands_list = [':help', ':exit', ':clear', ':cr']
+
     while 1:
-        message = input()
-        if message not in ['', ' ', '\n']:
-            sl.send_message(message)
+        try:
+            message = input()
+            if message not in ['', ' ', '\n'] and message not in commands_list:
+                sl.send_message(message)
+            elif message in commands_list:
+                internal_commands(sl, message)
+        except KeyboardInterrupt:
+            sl.send_message('left the chat')
+            sl.kill_thread = True
+            sys.exit()
