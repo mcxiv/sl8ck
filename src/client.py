@@ -3,30 +3,41 @@
 # Quentin Dufournet, 2023
 # --------------------------------------------------
 # Built-in
+from datetime import datetime
 import sys
 import threading
 import time
-import json
 import argparse
 import os
 
 # 3rd party
 import requests
 from rich import print as rprint
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 
 # --------------------------------------------------
 
 
 class MySl8ck():
-    def __init__(self, url):
+    def __init__(self, url, room):
         self.url = url
         self.kill_thread = False
         self.previous_messages = None
         self.new_messages = None
+        self.room = room
 
         if self.login() != 200:
             sys.exit('Login failed')
+
+        try:
+            self.new_messages = self.get_messages()['success']
+            self.new_messages = raw_messages_to_list(self.new_messages)
+            self.new_messages = [decrypt_message(
+                message) for message in self.new_messages]
+        except InvalidToken:
+            sys.exit(f'Wrong key for room {args.room}')
+
+        self.send_message('joined the room')
 
     def login(self):
         """ Login to the server
@@ -35,6 +46,7 @@ class MySl8ck():
         """
 
         self.user = input('Enter username: ')
+        print()
         if self.user in ['', ' ', '\n']:
             sys.exit('Username cannot be empty')
         response = requests.post(f'{self.url}/login', data={'user': self.user})
@@ -57,9 +69,10 @@ class MySl8ck():
         :param message: Message to send
         """
 
-        message = encrypt_message(message)
+        date = datetime.now().strftime('%d-%m-%Y %H:%M:%S')
+        message = encrypt_message(f'{date} - {self.user} : {message}') + '\n'
         response = requests.post(
-            f'{self.url}/message', data={'user': self.user, 'message': message})
+            f'{self.url}/message/{self.room}', data={'user': self.user, 'message': message})
         if response.status_code != 200:
             sys.exit('Error while sending message')
         self.refresh_screen()
@@ -82,7 +95,8 @@ class MySl8ck():
         :return: List of messages
         """
 
-        response = requests.get(f'{self.url}/message', params={'size': 25})
+        response = requests.get(
+            f'{self.url}/message/{self.room}', params={'size': 25})
         if response.status_code != 200:
             sys.exit('Error while retrieving messages')
         return response.json()
@@ -92,8 +106,11 @@ class MySl8ck():
 
         os.system('clear')
         refresh_messages = self.get_messages()['success']
-        refresh_messages = decrypt_message(refresh_messages)
-        refresh_messages = list(message_as_str_to_dict(refresh_messages))
+        refresh_messages = raw_messages_to_list(refresh_messages)
+        refresh_messages = [decrypt_message(
+            message) for message in refresh_messages]
+        refresh_messages = messages_to_dict(refresh_messages)
+
         for message in refresh_messages:
             self.print_message(message)
         self.previous_messages = refresh_messages
@@ -109,7 +126,7 @@ def encrypt_message(message):
     key = os.environ['SL8CK_KEY'].encode()
     f = Fernet(key)
 
-    return f.encrypt(message.encode()).decode(), key.decode()
+    return f.encrypt(message.encode()).decode()
 
 
 def decrypt_message(message):
@@ -122,7 +139,10 @@ def decrypt_message(message):
     key = os.environ['SL8CK_KEY'].encode()
     f = Fernet(key)
 
-    return f.decrypt(message.encode()).decode()
+    try:
+        return f.decrypt(message.encode()).decode()
+    except InvalidToken:
+        sys.exit(f'Wrong key for room {args.room}')
 
 
 def parse_args():
@@ -134,24 +154,41 @@ def parse_args():
                         help='URL of the server')
     parser.add_argument('-k', '--key', type=str, default=None,
                         help='Key to encrypt/decrypt messages')
+    parser.add_argument('-r', '--room', type=str, default='1114',
+                        help='Room to join')
 
     return parser.parse_args()
 
 
-def message_as_str_to_dict(messages):
-    """ Convert a list of messages as string to a list of messages as dict
+def raw_messages_to_list(messages):
+    """ Convert raw messages to a list of messages
 
-    :param messages: List of messages as string
-    :return: List of messages as dict
+    :param messages: Raw messages
+    :return: List of messages
     """
 
-    messages = messages.strip('[]').split('}, ')
+    return messages.strip(
+        '[]').replace(
+        "'", '').replace(
+        ', ', '').split(
+        '\\n')[:-1]
+
+
+def messages_to_dict(messages):
+    """ Convert messages to a list of dict 
+
+    :param messages: List of messages
+    """
+
+    messages_as_dict = []
     for message in messages:
-        if not message.endswith('}'):
-            message += '}'
-        message = message.replace("'", '"')
-        message = json.loads(message)
-        yield message
+        message = {
+            'date': message.split(' - ')[0],
+            'user': message.split(' - ')[1].split(' : ')[0],
+            'message': message.split(' - ')[1].split(' : ')[1].strip('\n')
+        }
+        messages_as_dict.append(message)
+    return messages_as_dict
 
 
 def main_thread(sl):
@@ -160,18 +197,14 @@ def main_thread(sl):
     :param sl: MySl8ck object
     """
 
-    sl.previous_messages = sl.get_messages()['success']
-    sl.previous_messages = decrypt_message(sl.previous_messages)
-    sl.previous_messages = list(message_as_str_to_dict(sl.previous_messages))
-    for message in sl.previous_messages:
-        sl.print_message(message)
-
     started = time.time()
     while not sl.kill_thread:
         if time.time() - started >= 5:
             sl.new_messages = sl.get_messages()['success']
-            sl.new_messages = decrypt_message(sl.new_messages)
-            sl.new_messages = list(message_as_str_to_dict(sl.new_messages))
+            sl.new_messages = raw_messages_to_list(sl.new_messages)
+            sl.new_messages = [decrypt_message(
+                message) for message in sl.new_messages]
+            sl.new_messages = messages_to_dict(sl.new_messages)
             sl.diff_messages(sl.previous_messages, sl.new_messages)
             sl.previous_messages = sl.new_messages
             started = time.time()
@@ -201,7 +234,7 @@ def internal_commands(sl, command):
                )
         rprint()
     elif command == ':exit':
-        sl.send_message('left the chat')
+        sl.send_message('left the room')
         sl.kill_thread = True
         sys.exit()
     elif command == ':clear':
@@ -240,11 +273,7 @@ if __name__ == '__main__':
 
     print_welcome()
 
-    sl = MySl8ck(args.url)
-
-    messages = sl.get_messages()['success']
-    messages = decrypt_message(messages)
-    messages = list(message_as_str_to_dict(messages))
+    sl = MySl8ck(args.url, args.room)
 
     main = threading.Thread(target=main_thread, args=(sl,))
     main.start()
@@ -259,6 +288,6 @@ if __name__ == '__main__':
             elif message in commands_list:
                 internal_commands(sl, message)
         except KeyboardInterrupt:
-            sl.send_message('left the chat')
+            sl.send_message('left the room')
             sl.kill_thread = True
             sys.exit()
