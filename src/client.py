@@ -104,7 +104,7 @@ class MySl8ck():
     def refresh_screen(self):
         """ Refresh the screen and print the last messages """
 
-        os.system('clear')
+        os.system('clear') if os.name == 'posix' else os.system('cls')
         refresh_messages = self.get_messages()['success']
         refresh_messages = raw_messages_to_list(refresh_messages)
         refresh_messages = [decrypt_message(
@@ -238,7 +238,7 @@ def internal_commands(sl, command):
         sl.kill_thread = True
         sys.exit()
     elif command == ':clear':
-        os.system('clear')
+        os.system('clear') if os.name == 'posix' else os.system('cls')
     elif command == ':cr':
         sl.refresh_screen()
 
